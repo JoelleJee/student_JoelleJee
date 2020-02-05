@@ -1,0 +1,380 @@
+---
+title: "Assignment 1 - Clean, Map to HUGO Symbol, and Normalize Data"
+output:
+  html_document:
+    df_print: paged
+author: "Joelle Jee"
+---
+
+## General Plublication Information
+Publication Title: Disruption of the MBD2-NuRD complex but not MBD3-NuRD induces high level HbF expression in human adult erythroid cells\
+Publication Date: 2019 Dec\
+Publication Journal: Haematologica\
+GEOID: GSE121992\
+\
+This study was able to prove that the Nucleosome Remodeling and Deacetylase complex member MBD2 knock-out in primary human erythroid cells were able to significantly elevate the gamma/gamma+beta mRNA expresssion of HbF, which is known in the literature to benefit sickle cell anemia patients.\
+They performed RNA-sequencing of the MBD2KO and the control (sgCSR) cells before and after differentiation to measure the effect of deficiency of MBD in erythroid differentiation.\
+They found that MBD2KO in primary human erythroid cells significantly elevate the gamma/gamma+beta mRNA expresssion of HbF without changing the morphological appearance after differentiation compared to controls. From this finding, the authors proposed that therapies targeting MBD2 can ameliorate the underlying pathophysiological defects in sickle cell anemia and beta (beta)-thalassemia.\
+
+## Load required packages
+
+We will first load the required packages to clean, normalize and interpret the data.
+
+```{r setup, message = FALSE, results = "hide"}
+knitr::opts_chunk$set(warning = FALSE)
+
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+if (!requireNamespace("GEOquery", quietly = TRUE)) {
+  BiocManager::install("GEOquery")
+}
+
+if (!requireNamespace("biomaRt", quietly = TRUE)) {
+  BiocManager::install("biomaRt")
+}
+
+if (!requireNamespace("edgeR", quietly = TRUE)) {
+  BiocManager::install("edgeR")
+}
+
+```
+
+## Download the Datset
+
+Download the dataset (GEO accession: GSE121992) using package GEOquery.
+
+```{r, message = FALSE, results = "hide"}
+HbF_gse <- GEOquery::getGEO("GSE121992", GSEMatrix = FALSE)
+HbF_gpl <- names(GEOquery::GPLList(HbF_gse))[1]
+HbF_gpl_info <- GEOquery::Meta(GEOquery::getGEO(HbF_gpl))
+```
+
+### Platform Information
+**Title of Platform:** `r HbF_gpl_info$title`\
+**Submission Date:** `r HbF_gpl_info$submission_date`\
+**Last Update Date:** `r HbF_gpl_info$last_update_date`\
+**Organism:** `r HbF_gpl_info$organism`\
+**Number of GEO datasets using this study:** `r length(HbF_gpl_info$series_id)`\
+**NUmber of GEO samples using this study:** `r length(HbF_gpl_info$sample_id)`
+
+## Download the Supplementary Files
+
+Observe the how the dataset was sampled by defining the groups.
+
+```{r}
+sfiles = GEOquery::getGEOSuppFiles('GSE121992')
+fnames = rownames(sfiles)
+# there is only one supplemental file
+HbF_exp <- read.delim(fnames[1], 
+                      header = TRUE, 
+                      check.names = FALSE, 
+                      skip = 1)
+
+samples <- c(replicate(3, "sgSCR_pre"),
+             replicate(3, "MBD2KO_pre"),
+             replicate(3, "sgSCR_post"),
+             replicate(3, "MBD2KO_post"))
+
+repNum <- c("1", "2", "3", "1", "2", "3", "1", "2", "3", "1", "2", "3")
+
+samples <- data.frame(samples, repNum)
+
+samples_row <- lapply(colnames(HbF_exp[7:18]),
+                      function(x) {
+                        sample_name <- unlist(strsplit(x, split = "\\/"))[2]
+                        sample_name <- unlist(strsplit(sample_name, split = "_"))[2]
+                        return(sample_name)
+                      })
+
+rownames(samples) <- samples_row
+colnames(samples) <- c("cell type", "replication")
+
+samples
+
+```
+
+
+## Data Filtering and Normalizing
+
+### Filtering weakly expressed and noninformative features
+
+Abiding by edgeR, remove features without at least 1 read per million in n of the samples, where n is the size of thes smallest group of repicates. Here n equals to 3.
+
+```{r}
+# calculate the counts per million using the edgeR package function cpm
+cpms <- edgeR::cpm(HbF_exp[, 7:18])
+rownames(cpms) <- HbF_exp[, 1]
+
+# now drop the genes with low counts
+keep <- rowSums(cpms > 1) >= 3
+HbF_exp_filtered <- HbF_exp[keep,]
+
+# number of unimportant genes dropped:
+num_removed <- dim(HbF_exp)[1] - dim(HbF_exp_filtered)[1]
+
+num_removed
+```
+
+### Filtering missing genes
+#### Map the GeneId to Hugo gene symbols
+
+We will be using the package Biomart to map the Human Ensembl Gene Ids to HGNC gene symbols.
+
+```{r}
+# first need to convert the ensembl id versions to simply ensembl id
+# because low match count with ensemble_id_version to hgnc_symbol
+char_HbF_id <- as.character(HbF_exp_filtered$Geneid)
+ensembl_id <- lapply(char_HbF_id, 
+                     function(x) {
+                       return(unlist(strsplit(x,"\\."))[1])
+                     })
+ensembl_id <- unlist(ensembl_id)
+HbF_exp_filtered$Geneid <- ensembl_id
+
+# check first to see if HbF_id_conversions.rds exists
+conversion_stash <- "HbF_id_conversion.rds"
+if (file.exists(conversion_stash)) {
+  HbF_id_conversion <- readRDS(conversion_stash)
+} else {
+  # define ensembl
+  ensembl <- biomaRt::useMart("ensembl", 
+                              dataset = "hsapiens_gene_ensembl", 
+                              host="uswest.ensembl.org", 
+                              ensemblRedirect = FALSE)
+  # using ensembl match the gene ids in our dataset to 
+  # HUGO gene symbols
+  HbF_id_conversion <- biomaRt::getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
+                                 filters = "ensembl_gene_id",
+                                 values = HbF_exp_filtered$Geneid,
+                                 mart = ensembl)
+  # save the file to decrease computationtime in the future
+  saveRDS(HbF_id_conversion, conversion_stash)
+}
+
+HbF_id_conversion[1:5,]
+
+```
+Let's see how many genes ids were not matched to a gene name.
+```{r}
+# merge HbF_id_conversion to HbF_exp_filtered by gene ids
+counts_annot <- merge(HbF_id_conversion, 
+                      HbF_exp_filtered, 
+                      by.x = 1,
+                      by.y = 1,
+                      all.y = TRUE)
+
+# the rows without a match will say NA for gene name
+counts_annot[counts_annot == ""] <- NA
+missing_gene <- counts_annot$ensembl_gene_id[which(is.na(counts_annot$hgnc_symbol))]
+# percentage of missing genes
+length(missing_gene)/nrow(counts_annot)
+```
+
+Remove missing genes although its 15% because our original dataset does not provide gene names. If our original dataset provided gene names, even if some gen ids did not map to HUGO gene symbols, we would've been able to use outdated gene symbols. But that is not an option in this case.
+
+```{r}
+HbF_id_conversion[HbF_id_conversion == ""] <- NA 
+# simply remove the unmatched rows by setting all.y = FALSE
+mapped_genes <- merge(HbF_id_conversion, 
+                      HbF_exp_filtered, 
+                      by.x = 1,
+                      by.y = 1,
+                      all.y = FALSE)
+
+mapped_genes[1:5, 8:19]
+```
+
+Let's see if each ensemble gene id uniquely maps to a gene name.
+
+```{r}
+num_unique <- length(unique(mapped_genes$hgnc_symbol))
+num_unique == length(unique(mapped_genes$ensembl_gene_id))
+
+```
+
+NO it is not. For multiple geneids mapping to the same gene name, we will take the average count.
+
+```{r}
+length(unique(mapped_genes$ensembl_gene_id))
+length(mapped_genes$ensembl_gene_id)
+```
+
+We only have multiple gene ids mapping to same gene names and not the other way around.\
+To take this problem into account, we will take the average of the gene counts by the name.
+
+```{r}
+# compute the average count for each sample group by gene name
+a <- aggregate(mapped_genes[, 8:19],
+               list(mapped_genes$hgnc_symbol),
+               mean)
+
+# call it mapped_genes and name the rows by the unique gene names
+mapped_genes <- a[,2:13]
+rownames(mapped_genes) <- a[, 1]
+
+
+# change the column names of mapped_genes to sample
+# names for readability of the graph
+col_names <- lapply(rownames(samples), 
+                    function(x) {
+                      cell_type <- as.character(samples[x,1])
+                      rep <- as.character(samples[x, 2])
+                      name <- paste(cell_type, rep, sep = "_r")
+                    })
+
+colnames(mapped_genes) <- unlist(col_names)
+
+mapped_genes[1:5,]
+```
+Final coverage of out data is:
+```{r}
+nrow(mapped_genes)
+```
+
+
+
+### Normalize Data with Trimmed Mean of M-values
+
+We will be using Trimmed MEan of M-values (TMM) to normalize out data. It is a way of computing the average of data excluding the extremes of the data points. This method also does not require modification prior to normalization. Using R package edgeR, we can compute normalize data using TMM very easily.\
+\
+First Create an edgeR container for RNASeq count data.
+```{r}
+filtered_data_matrix <- as.matrix(mapped_genes)
+rownames(filtered_data_matrix) <- rownames(mapped_genes)
+
+d <- edgeR::DGEList(counts = filtered_data_matrix,
+                   group = samples$cell.type)
+
+d[1:5, ]
+```
+
+Then calculate the normalization factors.
+```{r}
+d <- edgeR::calcNormFactors(d)
+
+d[1:5,]
+```
+
+Estimate common and tagwise dispersion using edgeR. Dispersion is a measuret of how much the variance deviates from the mean; and common and tagwise dispersion calculates a common dispersion value for all genes, and gene-specific dispersion.
+```{r}
+model_design <- model.matrix(~samples$replication + samples$`cell type`+0)
+d <- edgeR::estimateDisp(d, model_design)
+norm_counts <- edgeR::cpm(d)
+
+norm_counts[1:5,]
+```
+
+Graph the biological coefficient of variation(BCV), which is squared of dspersion.
+```{r}
+edgeR::plotBCV(d, col.tagwise = "black", col.common = "red")
+```
+
+Visualize the representation of the mean-variance relationship.
+
+```{r}
+edgeR::plotMeanVar(d, show.raw.vars = TRUE,
+                   show.tagwise.vars = TRUE,
+                   NBline = TRUE,
+                   show.ave.raw.vars = TRUE,
+                   show.binned.common.disp.vars = TRUE)
+```
+
+## Visualization of Normalized  vs unNormalized Data
+### Boxplot
+```{r}
+
+# BOXPLOT FOR UNNORMLIZED DATA
+data2plot <- log2(edgeR::cpm(mapped_genes))
+boxplot(data2plot, xlab = "Samples", ylab = "log2 CPM",
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "HbF RNASeq Original Counts")
+
+abline(h = median(apply(data2plot, 2, median)),
+       col = "green", 
+       lwd = 0.6,
+       lty = "dashed")
+
+# BOXPLOT FOR NORMALIZED DATA
+norm_data2plot <- log2(norm_counts)
+boxplot(norm_data2plot, xlab = "Samples", ylab = "log2 CPM",
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "HbF RNASeq normalized Counts")
+
+abline(h = median(apply(norm_data2plot, 2, median)),
+       col = "green", 
+       lwd = 0.6,
+       lty = "dashed")
+```
+
+
+### Density plot
+```{r}
+# DENSITY PLOT FOR UNNORMALIZED DATA
+counts_density <- apply(log2(edgeR::cpm(mapped_genes)), 
+                        2, 
+                        density)
+#calculate the limits across all the samples
+xlim <- 0; ylim <- 0
+for (i in 1:length(counts_density)) {
+  xlim <- range(c(xlim, counts_density[[i]]$x)); 
+  ylim <- range(c(ylim, counts_density[[i]]$y))
+}
+cols <- rainbow(length(counts_density))
+ltys <- rep(1, length(counts_density))
+#plot the first density plot to initialize the plot
+plot(counts_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+     ylab="Smoothing density of log2-CPM", main="", cex.lab = 0.85)
+#plot each line
+for (i in 1:length(counts_density)) {
+  lines(counts_density[[i]], col=cols[i], lty=ltys[i])
+} 
+#create legend
+legend("topright", colnames(data2plot),  
+       col=cols, lty=ltys, cex=0.75, 
+       border ="blue",  text.col = "green4", 
+       merge = TRUE, bg = "gray90")
+
+
+# DENSITY PLOT FOR NORMALIZED DATA
+norm_counts_density <- apply(log2(norm_counts), 
+                        2, 
+                        density)
+#calculate the limits across all the samples
+xlim <- 0; ylim <- 0
+for (i in 1:length(norm_counts_density)) {
+  xlim <- range(c(xlim, norm_counts_density[[i]]$x)); 
+  ylim <- range(c(ylim, norm_counts_density[[i]]$y))
+}
+cols <- rainbow(length(norm_counts_density))
+ltys <- rep(1, length(norm_counts_density))
+#plot the first density plot to initialize the plot
+plot(norm_counts_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+     ylab="Smoothing density of log2-CPM", main="", cex.lab = 0.85)
+#plot each line
+for (i in 1:length(norm_counts_density)) {
+  lines(norm_counts_density[[i]], col=cols[i], lty=ltys[i])
+}
+#create legend
+legend("topright", colnames(data2plot),  
+       col=cols, lty=ltys, cex=0.75, 
+       border ="blue",  text.col = "green4", 
+       merge = TRUE, bg = "gray90")
+```
+
+## References
+[1] Yu, X., Azzo, A., Bilinovich, S. M., Li, X., Dozmorov, M., Kurita, R., Nakamura, Y., Williams, D. C., Ginder, G. D. (2019) Disruption of the MBD2-NuRD Complex But Not MBD3-NuRD Induces High Level HbF Expression in Human Adult Erythroid Cells. Haematologica 104:2361-2371; doi:10.3324/haematol.2018.210963
+
+[2] Davis, S., Meltzer, P. (2007) "GEOquery: a bridge between the Gene Expression Omnibus (GEO) and Bioconductor." Bioinformatics 14: 1846-1847
+
+[3] Robinson MD, McCarthy DJ and Smyth GK (2010). edgeR: a Bioconductor package for differential expression analysis of digital gene expression data. Bioinformatics 26, 139-140
+
+[4] McCarthy DJ, Chen Y and Smyth GK (2012). Differential expression analysis of multifactor RNA-Seq experiments with respect to biological variation. Nucleic Acids Research 40, 4288-4297
+
+[5] Durinck, S, Spellman, P. T., Birney, E., Huber, w. (2009) Mapping identifiers for the integration of genomic datasets with the R/Bioconductor package biomaRt. Nature Protocols 4, 1184-1191
+
+[6] Dunrinck, W., Moreau, Y., Kasprzyk, A., Davis, S., Moor, B. D., Brazma, A., Huber, W. (2005) BioMart and Bioconductor: a powerful link between biological databases and microarray data analysis. Bioinformatics 21, 3439-3440
+
+
+
