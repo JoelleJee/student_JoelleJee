@@ -1,5 +1,5 @@
 ---
-title: "Assignment 2"
+title: "Assignment 2 - Looking at Differential Expression"
 output:
   html_document:
     df_print: paged
@@ -15,11 +15,11 @@ This study was able to prove that the Nucleosome Remodeling and Deacetylase comp
 They performed RNA-sequencing of the MBD2KO and the control (sgCSR) cells before and after differentiation to measure the effect of deficiency of MBD in erythroid differentiation.\
 They found that MBD2KO in primary human erythroid cells significantly elevate the gamma/gamma+beta mRNA expresssion of HbF without changing the morphological appearance after differentiation compared to controls. From this finding, the authors proposed that therapies targeting MBD2 can ameliorate the underlying pathophysiological defects in sickle cell anemia and beta (beta)-thalassemia.\
 \
-In assignment 1, the dataset was cleaned by removing outliers, and non-informative datapoints, and mapped to HUGO gene symbols, and normalized using Timmed Mean of M-Values. In this assignment, the genes will be ranked according to differential expression and I will perform enrichment analysis to see the dominant themes in the top hits.
+In assignment 1, the dataset was cleaned by removing outliers, and non-informative datapoints, and mapped to HUGO gene symbols, and normalized using Timmed Mean of M-Values. In this assignment, the genes will be ranked according to differential expression and I will perform enrichment analysis to see the dominant themes in the top hits. From the results, I will determine if my study supports the original finding that the MBD2KO does not have adverse effects on erythroid cell differentiation.
 
 ## Load required packages
 
-We will first load the required packages to clean, normalize and interpret the data.
+We will first load the required packages to clean, normalize and interpret the data.^1-10^
 
 ```{r setup, message = FALSE, results = "hide"}
 knitr::opts_chunk$set(warning = FALSE)
@@ -79,21 +79,24 @@ HbF_gpl_info <- GEOquery::Meta(GEOquery::getGEO(HbF_gpl))
 **NUmber of GEO samples using this study:** `r length(HbF_gpl_info$sample_id)`
 
 ## Load and visualize the cleaned, normalized data
-Load the cleaned data saved in the data folder from Assignment 1.
+
+### Loading Data from Assignment 1.
+
+Load the cleaned, normalized gene counts data saved in the data folder from Assignment 1.
 ```{r}
 normalized_count_data <- read.table(file = file.path("data", "GSE121992_finalized_normalized_counts.txt"),
                                     header = TRUE, sep = "\t",
                                     stringsAsFactors = FALSE,
                                     check.names = FALSE)
 
-normalized_count_data[1:5, 1:5]
+knitr::kable(normalized_count_data[1:5, 1:5], type = "html", caption = "Normalized Gene Counts")
 ```
-
-A heatmap is a data graph that maps the measurements of many samples to a colour scale to allow better visualization of the overall tred of the data. With a heatmap, we can manipulate the format to highlight the themes in the data.\
+### Visualization with a heatmap
+A heatmap is a data graph that maps the measurements of many samples to a colour scale to allow better visualization of the overall trend of the data. With a heatmap, we can manipulate the format to highlight the themes in the data.\
 
 We will first visualize the above data using a heatmap.\
 
-To do so, first create a numerical matrix of the data.
+To do so, we need to first create a numerical matrix representation of the data.
 ```{r}
 heatmap_matrix <- normalized_count_data
 rownames(heatmap_matrix) <- rownames(normalized_count_data)
@@ -121,7 +124,7 @@ current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix),
 current_heatmap
 ```
 
-As you can see, the above graph does not tell us any information. This is because the data is yet to be row-normalized, which is a method of scaling each row and centering them around the mean. The R function scale() takes each value and subtract the mean and divide by the standard deviaiton of the row to row normalize it. Let's row-normalize the data and compare the heatmap drawn from it to the above heatmap.
+As you can see, the above graph does not tell us any meaningful information. This is because the data is yet to be row-normalized, which is a method of scaling each row and centering them around the mean. The R function scale() takes each value and subtract the mean and divide by the standard deviaiton of the row to row normalize it. Let's row-normalize the data and compare the heatmap drawn from it to the above heatmap.
 
 ```{r}
 # row normalize
@@ -146,10 +149,15 @@ current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix),
 current_heatmap
 ```
 
+A row-normalized heatmap as above depicts meaningful information; more blue the color is, more downregulated the gene is in the sample, and more red the color is, more upregulated the gene is in the sample. Each column represents each sample, and we can see from the heatmap genes in the same samples tend to cluster in values. For each cell type (e.g. MBD2KO_post), we can see that the reps (e.g. r3) have similar coloring on the heatmap, which means that same genes tend to be upregulated/downregulated compared to the overall mean. 
+
 ## Defining differential expression with Limma
+We will be using linear models of microarray (Limma), which uses linear models to define/explain differential expression.\
+Later in this same assignment, we will use Quali Likelihood 
 
 ### Group and Cluster
-We will be using linear models of microarray (Limma), which uses linear models to define differential expression.\
+
+A multidimensional scaling (MDS) plot is allows visualization of similarity between each sample in a dataset.\ 
 Using the limma package, let's see how our samples are clustering with MDSPlot.
 ```{r}
 # set color scale
@@ -158,8 +166,11 @@ sample_col <- unlist(lapply(sample_col,
                             FUN = function(x){rep(x, 3)}))
 # draw the MDSPlot to see the clustering by sample
 limma::plotMDS(heatmap_matrix, 
-               col = sample_col)
+               col = sample_col,
+               main = "Clustering of Samples")
 ```
+
+As seen from the heatmap before, we can see that the cell types tend to cluster to themselves.
 
 Now we will define the groups and store it in variable samples.
 ```{r}
@@ -179,7 +190,7 @@ rownames(samples) <- c("replication","cell_type")
 
 # Group and view samples
 samples <- data.frame(t(samples))
-samples[1:5,]
+knitr::kable(samples[1:5,], type = "html", caption = "Samples")
 ```
 
 ### Create ExpressionSet
@@ -188,7 +199,7 @@ Let's use an R function, model.matrix, to create a design matrix.
 ```{r}
 # create a design matrix for our dataset
 model_design <- model.matrix(~ samples$cell_type)
-model_design
+knitr::kable(model_design, type = "html", caption = "Model Design Matrix")
 ```
 
 Now create our data matrix usign ExpressionSet
@@ -219,7 +230,7 @@ output_hits <- limma::topTable(fit2,
 #sort by pvalue
 output_hits <- output_hits[order(output_hits$P.Value),]
 
-output_hits[1:10,]
+knitr::kable(output_hits[1:10,], type = "html", caption = "Top Hits")
 ```
 
 ### Genes that pass the threshold
@@ -237,11 +248,12 @@ length(which(output_hits$adj.P.Val < 0.05))
 ```
 
 ## Multiple Hypothesis Correction
-We need to correct the p-values using a multiple hypothesis correction method because we need to account for the fact the likelihood of positive result is enhanced by number or replications of each sample. For example, since we have 3 replications of each cell type, the likelihood of positive outcome in at least of the replications is increased by 3.\  
-To control for family-wise error rate or for false discovery rate, we will use the BH (Benjamini-Hochberg) method. Also we will account for replication variability.
+We need to correct the p-values using a multiple hypothesis correction method because we need to account for the fact the likelihood of positive result is enhanced by number or replications of each sample. For example, since we have 3 replications of each cell type, the likelihood of positive outcome in at least of the replications is increased by x3.\  
+To control for family-wise error rate or for false discovery rate, we will use the BH (Benjamini-Hochberg) method as it is a very popular method for controlling the false discovery rate in the field of science (and often the default method for many functions in R).\
+Also we will account for replication variability as well as samples in our model design.\
 ```{r}
 model_design_pat <- model.matrix( ~ samples$replication + samples$cell_type)
-model_design_pat
+knitr::kable(model_design_pat, typr = "html", caption = "Corrected Model Design")
 ```
 
 Now fit our data to the above model
@@ -260,7 +272,7 @@ output_hits_pat <- limma::topTable(fit2_pat,
 #sort by pvalue
 output_hits_pat <- output_hits_pat[order(output_hits_pat$P.Value),]
 
-output_hits_pat[1:10,]
+knitr::kable(output_hits_pat[1:10,], type = "html", caption = "Corrected Top Hits")
 ```
 
 Let's now see if the number of genes that pass the threshold p-value has changed.
@@ -273,43 +285,62 @@ length(which(output_hits_pat$P.Value < 0.05))
 length(which(output_hits_pat$adj.P.Val < 0.05))
 ```
 
-Just by looking at the numbers, we can see that Multiple Hypothesis Correction decreased the number of genes that passed the threholds.\
+Just by looking at the numbers, we can see that Multiple Hypothesis Correction decreased the number of genes that passed the threholds. This means that the BH procedure successfully removed the false positive results from our dataset.\
 
 ### Comparing the results from two different models
 
-Let's now compare the results from the two different models.
+Let's now compare the results from the the original dataset and from the dataset with BH procedure done and replications accounted for.
 ```{r}
+# original dataset
 simple_model_pvalues <- data.frame(hgnc = rownames(output_hits),
                                    simple_pvalue=output_hits$P.Value)
+# corrected for and reps accounted for
 pat_model_pvalues <-  data.frame(hgnc = rownames(output_hits_pat),
-                                 patient_pvalue = output_hits_pat$P.Value)
+                                 reps_pvalue = output_hits_pat$P.Value)
+# merge the results of two models
 two_models_pvalues <- merge(simple_model_pvalues,
                             pat_model_pvalues,by.x=1,by.y=1)
+
 two_models_pvalues$colour <- "black"
+# color the original dataset points orange
 two_models_pvalues$colour[two_models_pvalues$simple_pvalue<0.05] <- "orange"
-two_models_pvalues$colour[two_models_pvalues$patient_pvalue<0.05] <- "blue"
-two_models_pvalues$colour[two_models_pvalues$simple_pvalue<0.05 & two_models_pvalues$patient_pvalue<0.05] <- "red"
-plot(two_models_pvalues$simple_pvalue,two_models_pvalues$patient_pvalue,
+# color the corrected dataset point blue
+two_models_pvalues$colour[two_models_pvalues$reps_pvalue<0.05] <- "blue"
+# overlapping dataset points are colored red
+two_models_pvalues$colour[two_models_pvalues$simple_pvalue<0.05 & two_models_pvalues$reps_pvalue<0.05] <- "red"
+
+# let's pot to see the difference
+plot(two_models_pvalues$simple_pvalue,two_models_pvalues$reps_pvalue,
      col = two_models_pvalues$colour,
-     xlab = "simple model p-values",
-     ylab ="Patient model p-values", 
-     main="Simple vs Patient Limma")
+     xlab = "Simple model p-values",
+     ylab ="Reps model p-values", 
+     main="Simple vs Reps Limma")
 ```
 
+Blue: significant data points from corrected dataset.\
+Orange: significant data points from original dataset.\
+Red: overlap of the significant data points from corrected and original datsets.\
+Black: all other datapoints.
 ### Visualization with a heatmap
 Coming back to the initial heatmap representation of the data,
 
 ```{r}
+# Get the significant data points
 top_hits <- rownames(output_hits_pat)[output_hits_pat$P.Value<0.05]
+# extract the significant dat points and row normalize 
 heatmap_matrix_tophits <- t(
   scale(t(heatmap_matrix[
     which(rownames(heatmap_matrix) %in% top_hits),])))
+
+# set the colour scale
 if(min(heatmap_matrix_tophits) == 0){
     heatmap_col = circlize::colorRamp2(c( 0, max(heatmap_matrix_tophits)), 
                              c( "white", "red"))
   } else {
     heatmap_col = circlize::colorRamp2(c(min(heatmap_matrix_tophits), 0, max(heatmap_matrix_tophits)), c("blue", "white", "red"))
   }
+
+# draw the heatmap
 current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix_tophits),
                                            cluster_rows = TRUE,
                                            cluster_columns = TRUE,
@@ -353,14 +384,16 @@ current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix_tophits),
 
 current_heatmap
 ```
-
-Try for a slightly cleaner picture by rendering just the genes that are in the top hits.
+You can see that samples show a little bit stronger clustering. The colors are a little bit more intensified in the sample groups.\
+We'll get a slightly cleaner picture by rendering just the genes that are in the top hits with p-value < 0.01 (before we use the 0.05 cut-off).
 
 ```{r}
-
+# get the top hits genes
 top_hits <- rownames(output_hits_pat)[output_hits_pat$P.Value<0.01]
+# extract the top this genes and row normalize
 heatmap_matrix_tophits <- t(
   scale(t(heatmap_matrix[which(rownames(heatmap_matrix) %in% top_hits),]))) 
+# group by samples
 heatmap_matrix_tophits<- heatmap_matrix_tophits[,
                                                 c(                    
                                                   grep(colnames(heatmap_matrix_tophits),pattern = "sgSCR_pre"),
@@ -368,12 +401,15 @@ heatmap_matrix_tophits<- heatmap_matrix_tophits[,
                                                   grep(colnames(heatmap_matrix_tophits),pattern = "sgSCR_post"),
                                                   grep(colnames(heatmap_matrix_tophits),pattern = "MBD2KO_post")
                                                 )]
+# set the color scale
 if(min(heatmap_matrix_tophits) == 0){
   heatmap_col = circlize::colorRamp2(c( 0, max(heatmap_matrix_tophits)), 
                                      c( "white", "red"))
 } else {
   heatmap_col = circlize::colorRamp2(c(min(heatmap_matrix_tophits), 0, max(heatmap_matrix_tophits)), c("blue", "white", "red"))
 }
+
+# draw the heatmap
 current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix_tophits),
                                            cluster_rows = TRUE,  show_row_dend = TRUE,
                                            cluster_columns = FALSE,show_column_dend = FALSE,
@@ -383,7 +419,9 @@ current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix_tophits),
 current_heatmap
 ```
 
+You can see that the colors have intensified even more than before; this is because we are using only the genes that have extremely low p-values.
 The clustering of the cell types is quite obvious to see. 
+
 ## Calculating differential expression with Quali likelihood model
 Set up edgeR objects and use the Quali likelihood model to calculate differential expression.
 ```{r}
@@ -407,7 +445,7 @@ qlf.pos_vs_neg <- edgeR::glmQLFTest(fit, coef=c('samples$cell_typesgSCR_pre',
                                                 'samples$cell_typesgSCR_post'))
 
 # extract the most differentially expressed genes
-edgeR::topTags(qlf.pos_vs_neg)
+knitr::kable(edgeR::topTags(qlf.pos_vs_neg), type = "html", caption = "Top Hits")
 
 ```
 
@@ -416,7 +454,7 @@ See the results sorted by the p-value.
 qlf_output_hits <- edgeR::topTags(qlf.pos_vs_neg,sort.by = "PValue",
                            n = nrow(normalized_count_data))
 
-qlf_output_hits[1:10, ]
+knitr::kable(qlf_output_hits[1:10, ], type = "html", caption = "Top Hits by p-value")
 ```
 
 ### Genes passing the threshold
@@ -430,9 +468,9 @@ How many genes pass correction?
 length(which(qlf_output_hits$table$FDR < 0.05))
 ```
 
-### Compare the results from Limma and Quasi
+### Compare the results from Limma and Quali
 
-Limma vs Quasi likelihood results.
+We compare the Limma vs Quali likelihood results with a plot.
 ```{r}
 # Quali likelihood results
 qlf_pat_model_pvalues <- data.frame(
@@ -452,6 +490,8 @@ two_models_pvalues$colour <- "black"
 two_models_pvalues$colour[two_models_pvalues$qlf_patient_pvalue<0.05] <- "orange"
 two_models_pvalues$colour[two_models_pvalues$limma_patient_pvalue<0.05] <- "blue"
 two_models_pvalues$colour[two_models_pvalues$qlf_patient_pvalue<0.05 & two_models_pvalues$limma_patient_pvalue<0.05] <- "red"
+
+# draw the results in as a plot
 plot(two_models_pvalues$qlf_patient_pvalue,
      two_models_pvalues$limma_patient_pvalue,
      col = two_models_pvalues$colour,
@@ -459,8 +499,16 @@ plot(two_models_pvalues$qlf_patient_pvalue,
      ylab ="Limma Patient model p-values",
      main="QLF vs Limma")
 ```
+Blue: Limma method result\
+Orange: Quali likelihood result\
+Red: Overlap of Limma and Quali likelihood results\
+Black: all other data points\
+\
+It seems that both analyses have similar distribution of results.
+
 ### Looking at genes of interest.
-We will highlight our genes of interest. I have selected two groups of genes of interest: one for regulation of HbF and the other for differentiation of erythroid cells.
+
+We will highlight our genes of interest. I have selected two groups of genes of interest: one for regulation of HbF and the other for differentiation of erythroid cells.^12^
 ```{r}
 HbF_reg <- c("BCL11A", "MYB")
 diff_reg <- c("SPI1", "ALAS1", "ALAS2")
@@ -486,11 +534,12 @@ points(two_models_pvalues[
   two_models_pvalues$hgnc %in% HbF_reg,2:3],
        pch=24,  col="red", cex=1.5)
 ```
+The little triangles (red = HbF tags, blue = differentiation tags) in the bottom left corner are the genes of interest. As you can see they have a very low p-value, which means that they were significantly differntially expressed in the dataset as we expected.
 
 ### Visualization with a heatmap
-Coming back to the initial heatmap representation of the data
+Coming back to the initial heatmap representation of the data, we will look at the quali likelihood results.
 ```{r}
-# top hits from quasi likelihood results
+# top hits from Quali likelihood results
 top_hits <- rownames(qlf_output_hits$table)[output_hits_pat$P.Value<0.05]
 # row normalize only the genes in the top hits
 heatmap_matrix_tophits <- t(
@@ -516,9 +565,11 @@ current_heatmap <- ComplexHeatmap::Heatmap(as.matrix(heatmap_matrix_tophits),
 current_heatmap
 ```
 
-Sort the columns by cell type.
+
+
+Sort the columns by cell type and turn cluster_columsn argument to FALSE.
 ```{r}
-# top hits from the quasi likelihood results
+# top hits from the Quali likelihood results
 top_hits <- rownames(qlf_output_hits$table)[output_hits_pat$P.Value<0.05] 
 # row normalize to include just the top hits
 heatmap_matrix_tophits <- t(
@@ -705,13 +756,10 @@ MBD2KO_pre_up_enrich_table <- MBD2KO_pre_up_enrich$GO_Biological_Process_2018[1:
                                                                            "Overlap", 
                                                                            "Adjusted.P.value")]
 
-sg <- knitr::kable(sgSCR_pre_up_enrich_table,
+knitr::kable(sgSCR_pre_up_enrich_table,
              "html", align = 'clc', caption = 'Enrichment Analysis of sgSCR_pre Upregulated Genes')
-mbd <- knitr::kable(MBD2KO_pre_up_enrich_table,
+knitr::kable(MBD2KO_pre_up_enrich_table,
              "html", align = 'clc', caption = 'Enrichment Analysis of MBD2KO_pre Upregulated Genes')
-
-kableExtra::kable_styling(sg, full_width = FALSE, position = "float_left")
-kableExtra::kable_styling(mbd, full_width = FALSE, position = "right")
 
 ```
 
@@ -732,13 +780,11 @@ if (!requireNamespace("kableExtra")){
   install.packages("kableExtra")
 }
 
-sg <- knitr::kable(sgSCR_pre_down_enrich_table,
+knitr::kable(sgSCR_pre_down_enrich_table,
              "html", align = 'clc', caption = 'Enrichment Analysis of sgSCR_pre Downregulated Genes')
-mbd <- knitr::kable(MBD2KO_pre_down_enrich_table,
+knitr::kable(MBD2KO_pre_down_enrich_table,
              "html", align = 'clc', caption = 'Enrichment Analysis of MBD2KO_pre Downregulated Genes')
 
-kableExtra::kable_styling(sg, full_width = FALSE, position = "float_left")
-kableExtra::kable_styling(mbd, full_width = FALSE, position = "right")
 
 ```
 
@@ -757,19 +803,27 @@ sgSCR_post_down_enrich_table <- sgSCR_post_down_enrich$GO_Biological_Process_201
                                                                            "Overlap", 
                                                                            "Adjusted.P.value")]
 
-sg_up <- knitr::kable(sgSCR_post_up_enrich_table,
+knitr::kable(sgSCR_post_up_enrich_table,
              "html", align = 'clc', caption = 'Enrichment Analysis of sgSCR_post Upregulated Genes')
-sg_down <- knitr::kable(sgSCR_post_down_enrich_table,
+knitr::kable(sgSCR_post_down_enrich_table,
              "html", align = 'clc', caption = 'Enrichment Analysis of sgSCR_post Downregulated Genes')
 
-kableExtra::kable_styling(sg_up, full_width = FALSE, position = "float_left")
-kableExtra::kable_styling(sg_down, full_width = FALSE, position = "right")
 
 ```
 Above shows that there aren't much biological process related to cell cycle or differentiation up or down regulated in sgSCR_post cell type compared to the MBD2KO_post cell type.\
 \
 Overall the results of the enrichment analysis support the conclusions discussed in the original paper, as the control (sgSCR) and experimental (MBD2KO) cell types (pre and post) have minimal difference between each other. This supports their claim that MBD2KO has great potential to be a widely helpful in sickle cell amenia patients, as MBD2KO doesn't have adverse side effects. \
-Unfortunately, because this study is fairly new (published in 2019), there hasn't been other published studies to support this view that MBD2KO elevates levels of HbF AND does not have adverse side effects in erythroid differentiation. 
+Unfortunately, because this study is fairly new (published in 2019), there hasn't been other published studies to support this view that MBD2KO elevates levels of HbF AND does not have adverse side effects in erythroid differentiation. \
+However, there has been a study done in 2001 by Hendrich, et al, where they found out that MBD2KO mice were viable and fertile, with major deleterious phenotype.^11,13,14^
+
+### Genes of Interest
+Unfortunately, in our dataset, we did not have data for HbF gene. Therefore we will look at its regulators and infer the levels of HbF.
+```{r}
+HbF_result <- ranked_qlf_output_hits[which(rownames(ranked_qlf_output_hits) %in% HbF_reg),]
+
+knitr::kable(HbF_result, type = "html", caption = "HbF Regulators")
+```
+We can see that in sgSCR_post cells, BCL11A is significantly downregulated compared to MBD2KO_post cells.
 
 
 ## References
@@ -779,16 +833,24 @@ Unfortunately, because this study is fairly new (published in 2019), there hasn'
 
 [3] Robinson MD, McCarthy DJ and Smyth GK (2010). edgeR: a Bioconductor package for differential expression analysis of digital gene expression data. Bioinformatics 26, 139-140
 
-[4] McCarthy DJ, Chen Y and Smyth GK (2012). Differential expression analysis of multifactor RNA-Seq experiments with respect to biological variation. Nucleic Acids Research 40, 4288-4297
+[4] Durinck, S, Spellman, P. T., Birney, E., Huber, w. (2009) Mapping identifiers for the integration of genomic datasets with the R/Bioconductor package biomaRt. Nature Protocols 4, 1184-1191
 
-[5] Durinck, S, Spellman, P. T., Birney, E., Huber, w. (2009) Mapping identifiers for the integration of genomic datasets with the R/Bioconductor package biomaRt. Nature Protocols 4, 1184-1191
+[5] Dunrinck, W., Moreau, Y., Kasprzyk, A., Davis, S., Moor, B. D., Brazma, A., Huber, W. (2005) BioMart and Bioconductor: a powerful link between biological databases and microarray data analysis. Bioinformatics 21, 3439-3440
 
-[6] Dunrinck, W., Moreau, Y., Kasprzyk, A., Davis, S., Moor, B. D., Brazma, A., Huber, W. (2005) BioMart and Bioconductor: a powerful link between biological databases and microarray data analysis. Bioinformatics 21, 3439-3440
+[6] Gu Z, Eils R, Schlesner M (2016). "Complex heatmaps reveal patterns and correlations in multidimensional genomic data." Bioinformatics.
 
-[7]Gu Z, Eils R, Schlesner M (2016). "Complex heatmaps reveal patterns and correlations in multidimensional genomic data." Bioinformatics.
+[7] Gu, Z. (2014) circlize implements and enhances circular visualization in R. Bioinformatics. DOI: 10.1093/bioinformatics/btu393
 
-[8]Gu, Z. (2014) circlize implements and enhances circular visualization in R. Bioinformatics. DOI: 10.1093/bioinformatics/btu393
+[8] Ritchie ME, Phipson B, Wu D, Hu Y, Law CW, Shi W, Smyth GK (2015). "limma powers differential expression analyses for RNA-sequencing and microarray studies." Nucleic Acids Research, 43(7), e47. doi: 10.1093/nar/gkv007.
 
-[9]Ritchie ME, Phipson B, Wu D, Hu Y, Law CW, Shi W, Smyth GK (2015). "limma powers differential expression analyses for RNA-sequencing and microarray studies." Nucleic Acids Research, 43(7), e47. doi: 10.1093/nar/gkv007.
+[9] Kuleshov, M. V., Jones, M. R., Rouillard, A. D., Fernandez, N. F., Duan, Q., Wang, Z., Koplev, S., Jenkins, S. L., Jagodnik, K. M., Lachmann, A., McDermott, M. G., Monteiro, C. D., Gundersen, G. W., & Ma'ayan, A. (2016). Enrichr: a comprehensive gene set enrichment analysis web server 2016 update. Nucleic acids research, 44(W1), W90-W97. https://doi.org/10.1093/nar/gkw377
 
-[10]Kuleshov, M. V., Jones, M. R., Rouillard, A. D., Fernandez, N. F., Duan, Q., Wang, Z., Koplev, S., Jenkins, S. L., Jagodnik, K. M., Lachmann, A., McDermott, M. G., Monteiro, C. D., Gundersen, G. W., & Ma'ayan, A. (2016). Enrichr: a comprehensive gene set enrichment analysis web server 2016 update. Nucleic acids research, 44(W1), W90-W97. https://doi.org/10.1093/nar/gkw377
+[10] Zhu, A., Travison, T., Tsai, T., Beasley, W., Xie, Y., Yu, G.C., Laurent, S., Shepherd, R., Sidi, Y., Salzer, B., Gui, G., Fan, Y., Murdoch, D., Zhu, H. (2019) kableExtra: Contruct Complex Table with 'kable' and Pipe Syntax.
+
+[11] McCarthy DJ, Chen Y and Smyth GK (2012). Differential expression analysis of multifactor RNA-Seq experiments with respect to biological variation. Nucleic Acids Research 40, 4288-4297
+
+[12] Mello, F.V., Land, M.G.P., Costa, E.S. et al. Maturation-associated gene expression profiles during normal human bone marrow erythropoiesis. Cell Death Discov. 5, 69 (2019). https://doi.org/10.1038/s41420-019-0151-0
+
+[13] Hendrich, B., Guy, J., Ramsahoye, B., Wilson, V. A., & Bird, A. (2001). Closely related proteins MBD2 and MBD3 play distinctive but interacting roles in mouse development. Genes & development, 15(6), 710-723. https://doi.org/10.1101/gad.194101
+
+[14] Ginder, G.D. (2015) Epigenetic regulation of fetal globin gene expression in adult erythroid cells. Translational Research. 165(1):115-125. 
