@@ -628,6 +628,28 @@ length(which(qlf_output_hits$table$PValue < 0.05
 length(which(qlf_output_hits$table$PValue < 0.05 
              & qlf_output_hits$table$logFC.samples.cell_typeMBD2KO_pre < 0))
 ```
+Let's visualize the differentially expressed genes in a volcano plot
+```{r}
+if (!requireNamespace("a4Base")) {
+  BiocManager::install("a4Base")
+}
+library(a4Base)
+
+# for sgSCR_pre cell type
+volcanoPlot(qlf_output_hits$table$logFC.samples.cell_typesgSCR_pre,
+            qlf_output_hits$table$PValue,
+            pointLabels = rownames(qlf_output_hits$table))
+
+# sgSCR_post cell type
+volcanoPlot(qlf_output_hits$table$logFC.samples.cell_typesgSCR_post,
+            qlf_output_hits$table$PValue,
+            pointLabels = rownames(qlf_output_hits$table))
+
+# MBD2KO_pre cell type
+volcanoPlot(qlf_output_hits$table$logFC.samples.cell_typeMBD2KO_pre,
+            qlf_output_hits$table$PValue,
+            pointLabels = rownames(qlf_output_hits$table))
+```
 
 ## Enrichment Analysis
 ### Creating thresholded lists of genes
