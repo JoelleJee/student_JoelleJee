@@ -1,0 +1,371 @@
+---
+title: "Assignment 3 - Non-Thresholded Gene set Enrichment Analysis "
+output:
+  html_document:
+    df_print: paged
+    toc: true
+author: "Joelle Jee"
+---
+
+## Recap of Assignment 1 & 2
+Publication Title: Disruption of the MBD2-NuRD complex but not MBD3-NuRD induces high level HbF expression in human adult erythroid cells\
+Publication Date: 2019 Dec\
+Publication Journal: Haematologica\
+GEOID: GSE121992\
+\
+This study was able to prove that the Nucleosome Remodeling and Deacetylase complex member MBD2 knock-out in primary human erythroid cells were able to significantly elevate the gamma/gamma+beta mRNA expresssion of HbF, which is known in the literature to benefit sickle cell anemia patients.\
+They performed RNA-sequencing of the MBD2KO and the control (sgCSR) cells before and after differentiation to measure the effect of deficiency of MBD in erythroid differentiation.\
+They found that MBD2KO in primary human erythroid cells significantly elevate the gamma/gamma+beta mRNA expresssion of HbF without changing the morphological appearance after differentiation compared to controls. From this finding, the authors proposed that therapies targeting MBD2 can ameliorate the underlying pathophysiological defects in sickle cell anemia and beta (beta)-thalassemia.\
+\
+In assignment 1, the dataset was cleaned by removing outliers, and non-informative datapoints, and mapped to HUGO gene symbols, and normalized using Timmed Mean of M-Values. In this assignment, the genes will be ranked according to differential expression and I will perform enrichment analysis to see the dominant themes in the top hits. From the results, I will determine if my study supports the original finding that the MBD2KO does not have adverse effects on erythroid cell differentiation.
+\
+In assignment 2, the normalized expression data that was created in Assignment #1 was ranked according to differential expression. Then, thresholded over-representation analysis was performed on this data to highlight dominant themes in your top set of genes.
+\
+In this assignment, I will perform a non-thresholded gene set enrichment analysis, and compared the resutls from assignment 2.
+
+## Data/Platform Overview
+
+**Title of Platform:** Illumina HiSeq 2500 (Homo sapiens)
+**Submission Date:** Mar 14 2013
+**Last Update Date:** Mar 27 2019
+**Organism:** Homo sapiens
+**Number of GEO datasets using this study:** 6080
+**NUmber of GEO samples using this study:** 167630
+
+## Non-thresholded enrichment analysis with GSEA
+
+### Parse the ranked list of genes into .rnk format
+GSEA was used for enrichment analysis because GSEAPrerank runs enrichment analysis on user-supplied, ranked list of genes.^2^ We just input the ranked list from Assignment 2.\
+Here is a quick look of the data:\
+```{r}
+ranked_pre <- read.table("data/ranked_MBD2KO_pre.txt")
+knitr::kable(ranked_pre[1:10,], "html",
+             caption = "ranked list for MBD2KO_pre from A2")
+
+ranked_post <- read.table("data/ranked_MBD2KO_post.txt")
+knitr::kable(ranked_post[1:10,], "html",
+             caption = "ranked list for MBD2KO_post from A2")
+
+```
+
+Now we had to parse the file in an .rnk format to input to GSEA. It was saved in the data folder.
+```{r}
+
+pre <- data.frame("GeneName" = rownames(ranked_pre),
+                  "rank" = ranked_pre$rank)
+
+write.table(pre,
+            file=file.path("data","MBD2KO_pre.rnk.txt"),sep = "\t",
+            row.names = FALSE,col.names = TRUE,quote = FALSE, eol = "\n")
+
+post <- data.frame("GeneName" = rownames(ranked_post),
+                  "rank" = ranked_post$rank)
+write.table(post,
+            file=file.path("data","MBD2KO_post.rnk.txt"),sep = "\t",
+            row.names = FALSE,col.names = TRUE,quote = FALSE, eol = "\n")
+```
+
+```{r}
+knitr::kable(pre[1:10,], "html", caption = "ranked list for MBD2KO_pre in .rnk format")
+knitr::kable(post[1:10,], "html", caption = "ranked list for MBD2KO_post in .rnk format")
+```
+
+### Run GSEAPrerank 
+
+The above datasets were uploaded to the GSEA software
+![upload MBD2KO_post ranked list](https://user-images.githubusercontent.com/29262872/77785760-0489bc80-7033-11ea-8822-46cbad5f4fff.png)
+\
+![confirmation of upload](https://user-images.githubusercontent.com/29262872/77785911-4581d100-7033-11ea-9928-b2ace7b84376.png)
+\
+Then just as above, I uploaded the GO:BP file (http://download.baderlab.org/EM_Genesets/February_01_2020/Human/symbol/Human_GOBP_AllPathways_no_GO_iea_February_01_2020_symbol.gmt) to GSEA. GO:BP was to observe the differentiation related enrichment groups in the ranked gene set.\
+\
+Then run GSEAPrerank by setting "Gene sets database" as the downloaded GO:BP dataset, "Ranked List" as MBD2KO_pre.rnk or MBD2KO_post.rnk, change the "Analysis name" as "A_analysis_post" then hit "Run"
+![Run Prerank](https://user-images.githubusercontent.com/29262872/77802012-6278cd00-7050-11ea-8f8c-02023402bc07.png)
+\
+The results were saved in /Users/Joelle/gsea_home/output folder. We will be loading the .gmt file with package qusage.^3^
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+if (!requireNamespace("qusage", quietly = TRUE))
+    BiocManager::install("qusage")
+
+# load the result as a large named list
+post <- qusage::read.gmt("data/MBD2KO_post_non_thresh_result.gmt")
+
+# get the first few rows and turn into data frame
+summ_post <- data.frame("Ontology"  = unlist(lapply(names(post)[1:15], 
+                                                    function(x) {
+                                                      unlist(strsplit(x,"%"))[1]})),
+                        "Gene" = unlist(lapply(post[1:15],
+                                        function(x) {
+                                          paste(x, collapse = ", ")
+                                        })))
+# load the result as a large named list
+pre <- qusage::read.gmt("data/MBD2KO_post_non_thresh_result.gmt")
+
+summ_pre <- data.frame("Ontology"  = unlist(lapply(names(pre)[1:15], 
+                                                    function(x) {
+                                                      unlist(strsplit(x,"%"))[1]})),
+                        "Gene" = unlist(lapply(pre[1:15],
+                                        function(x) {
+                                          paste(x, collapse = ", ")
+                                        })))
+# getting rid of messy rownames
+rownames(summ_post) <- c()
+rownames(summ_post) <- c()
+
+# Let's see how they look
+knitr::kable(summ_post, "html", caption = "MBD2KO_post Enrichment Analysis Result")
+knitr::kable(summ_pre, "html", caption = "MBD2KO_pre Enrichment Analysis Result")
+```
+
+\
+
+### Compare with Thresholded Gene Enrichment Analysis 
+Let's compare the results from Assignment 2.
+```{r}
+# load enrichment result data from Assignment 2
+A2_pre <- read.table("data/MBD2KO_pre_enrich.txt", 
+                     sep = "\t", header = TRUE)[, c(-5, -6)]  # get rid of unnecessary columns
+A2_post <- read.table("data/MBD2KO_post_enrich.txt",
+                      sep = "\t", header = TRUE)[, c(-5, -6)]
+
+knitr::kable(A2_pre[1:15, ], "html", caption = "Thresholded Gene Enrichment Analysis of MBD2KO_pre")
+knitr::kable(A2_post[1:15, ], "html", caption = "Thresholded Gene Enrichment Analysis of MBD2KO_post")
+```
+
+As you can see, the top hits seem very different. Also, we get a very limited information on the GSEA results .gmt file. Therefore, we are unable to make a simple, straight forward comparison.
+
+## Visualizing the Enrichment Results
+
+Launch Cytoscape and launch EnrichmentMap under the "Apps" tab.^4^ Open the result folder.\
+Below were the resulting enrichment maps.
+\
+MBD2KO_pre:
+![MBD2KO_pre enrichment map](https://user-images.githubusercontent.com/29262872/77832206-a7f9d080-710a-11ea-9589-5b39a42f7e7f.png)
+\
+MBD2KO_post:
+![MBD2KO_post enrichment map](https://user-images.githubusercontent.com/29262872/77831763-6d426900-7107-11ea-8fd8-903d36b20ce0.png)
+\
+As you can see, the results were more extensive in MBD2KO_post group. As a result, to Cytoscape hid the labels automatically when I zoomed out to take the whole picture.\
+
+### Summary of Enrichment Maps
+The threshold used to build these two maps were the same. For nodes, FDR q-value cutoff was 0.1, p-value cutoff was 1.0, NES was set to "All". For edges, Data Set Edges was set to "Automatic", Cutoff was 0.375, Metric was set to "Jaccard+Overlap Combined".\
+In MBD2KO_pre enrichment map, there were 55 nodes and 64 edges.\
+In MBD2KO_post enrichment map, there were 240 nodes and 1408 edges.\
+
+## Annotating the network
+
+We annotated the above two networks with Cytoscape.\
+![Annotating](https://user-images.githubusercontent.com/29262872/77832555-64549600-710d-11ea-9826-6d12fad0fcb3.png)
+\
+With the default settings, annotations were created.
+![Annot param](https://user-images.githubusercontent.com/29262872/78319329-ee996180-7534-11ea-8a45-243565dd2300.png)
+\
+
+![MBD2KO_pre annotated](https://user-images.githubusercontent.com/29262872/78322361-8484ba80-753c-11ea-846a-3d6904cfc553.png)
+\
+There are not a lot of results in the MBD2KO_pre group. This was expected because from the original paper they found that there were no significant morphological or functional difference in the differentiation of the control and MBD2KO cells.\
+
+![MBD2KO_post annotated](https://user-images.githubusercontent.com/29262872/78321718-bf85ee80-753a-11ea-88cf-af828c283743.png)
+\
+There were more ontology groups showing the characteristics of erythroid cells in the MBD2KO_post analysis. However, these pathway clusters were relatively small, which further confirms the original finding of Yu, et al. (2019)\.
+Therefore, similarly to the result of thresholded gene enrichment analysis results, the non-thresholded gene enrichment analysis result support the conclusions discussed in the original paper, as the control (sgSCR) and experimental (MBD2KO) cell types (pre and post) have minimal difference between each other. This supports their claim that MBD2KO has great potential to be a widely helpful in sickle cell amenia patients, as MBD2KO doesn't have adverse side effects. \
+Furthermore, there has been a study done in 2001 by Hendrich, et al, where they found out that MBD2KO mice were viable and fertile, with major deleterious phenotype.^5,6,8^
+
+## Capturing the Dark Matter
+Let's see if there are any genes that we don't see in our pathway results that could be just as important as the genes that are returned from the analysis. We will load all files necessary to conduct dark matter analysis below. This time, load teh gmt file with package GSA.^8^
+
+```{r}
+# first install the package necessary
+if (!requireNamespace("BiocManager")) {
+  install.packages("BiocMAnager")
+}
+if (!requireNamespace("GSA")) {
+  install.packages("GSA")
+}
+
+# read the geneset file
+gmt_file <- file.path("data", 
+                      "Human_GOBP_AllPathways_no_GO_iea_February_01_2020_symbol.gmt.txt")
+capture.output(genesets <- GSA::GSA.read.gmt(gmt_file), file = "gsa_loud.out")
+
+# give proper indices/names
+names(genesets$genesets) <- genesets$geneset.names
+
+# load the expression data
+expression <- read.table(file = file.path("data", "GSE121992_finalized_normalized_counts.txt"),
+                                    header = TRUE, sep = "\t",
+                                    stringsAsFactors = FALSE,
+                                    check.names = FALSE)
+
+# get all the GSEA directories
+gsea_dir_pre <- list.files(path = file.path(getwd(),"data"), 
+                                 pattern = "\\pre.GseaPreranked")
+gsea_dir_post <- list.files(path = file.path(getwd(),"data"), 
+                                 pattern = "\\post.GseaPreranked")
+
+gsea_dir_pre <- file.path(getwd(), "data", gsea_dir_pre)
+gsea_dir_post <- file.path(getwd(), "data", gsea_dir_post)
+
+#get the gsea result files
+gsea_results_pre <- list.files(path = gsea_dir_pre, 
+                                 pattern = "gsea_report_*.*.xls")
+gsea_results_post <- list.files(path = gsea_dir_post, 
+                                 pattern = "gsea_report_*.*.xls")
+#there should be 2 gsea results files
+enr_file1_pre <- read.table(file.path(gsea_dir_pre,gsea_results_pre[1]), 
+                        header = TRUE, sep = "\t", quote="\"",  
+                        stringsAsFactors = FALSE,row.names=1)
+enr_file2_pre <- read.table(file.path(gsea_dir_pre,gsea_results_pre[2]), 
+                        header = TRUE, sep = "\t", quote="\"",  
+                        stringsAsFactors = FALSE,row.names=1)
+
+enr_file1_post <- read.table(file.path(gsea_dir_post,gsea_results_post[1]), 
+                        header = TRUE, sep = "\t", quote="\"",  
+                        stringsAsFactors = FALSE,row.names=1)
+enr_file2_post <- read.table(file.path(gsea_dir_post,gsea_results_post[2]), 
+                        header = TRUE, sep = "\t", quote="\"",  
+                        stringsAsFactors = FALSE,row.names=1)
+
+```
+
+Now extract all genes in the enrichment results and all genes in the geneset file (GO:BP) to calculate the dark matter from the above files.
+```{r}
+# get the genes from the set of enriched pathway 
+# (no matter what threshold)
+all_enr_genesets_pre <- c(rownames(enr_file1_pre), rownames(enr_file2_pre))
+all_enr_genesets_post <- c(rownames(enr_file1_post), rownames(enr_file2_post))
+
+genes_enr_gs_pre <- c()
+for(i in 1:length(all_enr_genesets_pre)){
+  current_geneset <- unlist(genesets$genesets[which(genesets$geneset.names %in% all_enr_genesets_pre[i])])
+  genes_enr_gs_pre <- union(genes_enr_gs_pre, current_geneset)
+}
+genes_enr_gs_post <- c()
+for(i in 1:length(all_enr_genesets_post)){
+  current_geneset <- unlist(genesets$genesets[which(genesets$geneset.names %in% all_enr_genesets_post[i])])
+  genes_enr_gs_post <- union(genes_enr_gs_post, current_geneset)
+}
+
+genes_all_gs <- unique(unlist(genesets$genesets))
+```
+With the loaded datasets, get the set of significant genes that are not annotated to any of the pathways returned in the enrichment analysis.
+```{r}
+# all significantly differentially expressed genes
+sig_genes_pre <- rownames(ranked_pre)[ranked_pre$PValue <= 0.05]
+sig_genes_post <- rownames(ranked_post)[ranked_pre$PValue <= 0.05]
+sig_genes_all <- union(sig_genes_pre, sig_genes_post)
+sig_genes_all <- setdiff(sig_genes_all, intersect(sig_genes_pre, sig_genes_post))
+
+# all genes annotated to a pathway
+genes_enr_gs_all <- union(genes_enr_gs_pre, genes_enr_gs_post)
+
+# dark matter genes
+sig_genes_no_annot <- setdiff(sig_genes_all, genes_enr_gs_all)
+```
+
+Getting the set of significant genes that are not annotated to any pathways in entire set of pathways used for the analysis:
+```{r}
+sig_genes_no_entire <- setdiff(sig_genes_all, genes_all_gs)
+```
+
+### Visualization of the Dark Matter with Heatmaps
+
+Let's visualize the expression of these dark matter genes with heatmaps using R packages ComplexHeatmap and circlize.^9,10^\
+First is the heatmap of any significant genes that are not annotated to any of the pathwyas returned in the enrichment analysis.
+```{r}
+
+# first load the required packages
+
+if (!requireNamespace("ComplexHeatmap")) {
+  BiocManager::install("ComplexHeatmap")
+}
+
+if (!requireNamespace("circlize")) {
+  install.packages("circlize")
+}
+
+# get the expression data of these genes
+enrich_dm_heatmap_matrix <- expression[rownames(expression) %in% sig_genes_no_annot,]
+
+# row normalize
+enrich_dm_heatmap_matrix <- t(scale(t(enrich_dm_heatmap_matrix)))
+
+# set color scale according to value
+if (min(enrich_dm_heatmap_matrix) == 0) {
+  heatmap_col = circlize::colorRamp2(c(0, max(enrich_dm_heatmap_matrix)), 
+                                     c("white", "red"))
+} else {
+  heatmap_col = circlize::colorRamp2(c(min(enrich_dm_heatmap_matrix), 0, 
+                                       max(enrich_dm_heatmap_matrix)), 
+                                     c("blue", "white", "red"))
+}
+
+# draw the heatmap
+enrich_dark_matter_heatmap <- ComplexHeatmap::Heatmap(as.matrix(enrich_dm_heatmap_matrix),
+                                           show_row_dend = TRUE,
+                                           show_column_dend = TRUE,
+                                           col = heatmap_col,
+                                           show_column_names = TRUE,
+                                           show_row_names = FALSE,
+                                           show_heatmap_legend = TRUE)
+
+enrich_dark_matter_heatmap
+
+```
+
+Now the heatmap of genes that are not annotated to any pathways in the entire set of pathways used for analysis.
+```{r}
+# get the expression data of these genes
+entire_dm_heatmap_matrix <- expression[rownames(expression) %in% sig_genes_no_entire,]
+
+# row normalize
+entire_dm_heatmap_matrix <- t(scale(t(entire_dm_heatmap_matrix)))
+
+# set color scale according to value
+if (min(entire_dm_heatmap_matrix) == 0) {
+  heatmap_col = circlize::colorRamp2(c(0, max(entire_dm_heatmap_matrix)), 
+                                     c("white", "red"))
+} else {
+  heatmap_col = circlize::colorRamp2(c(min(entire_dm_heatmap_matrix), 0, 
+                                       max(entire_dm_heatmap_matrix)), 
+                                     c("blue", "white", "red"))
+}
+
+# draw the heatmap
+entire_dark_matter_heatmap <- ComplexHeatmap::Heatmap(as.matrix(entire_dm_heatmap_matrix),
+                                           show_row_dend = TRUE,
+                                           show_column_dend = TRUE,
+                                           col = heatmap_col,
+                                           show_column_names = TRUE,
+                                           show_row_names = FALSE,
+                                           show_heatmap_legend = TRUE)
+
+entire_dark_matter_heatmap
+```
+
+
+
+### References
+
+[1] Yu, X., Azzo, A., Bilinovich, S. M., Li, X., Dozmorov, M., Kurita, R., Nakamura, Y., Williams, D. C., Ginder, G. D. (2019) Disruption of the MBD2-NuRD Complex But Not MBD3-NuRD Induces High Level HbF Expression in Human Adult Erythroid Cells. Haematologica 104:2361-2371; doi:10.3324/haematol.2018.210963
+
+[2] Subramanian, A., Tamayo, P., Mootha, V.K., Mukherjee, S., Ebert, B.L., Gillette, M.A., Paulovich, A., Pomeroy, S.L., Golub, T.R., Landerder, E.S., Mesirov, J.P. (2005) Gene set enrichment analysis: a knowledge-based approach for interpreting genome-wide expression profiles. Proc Natl Acad Sci USA. 102(43):15545-50.
+
+[3] Yaari G, Bolen C, Thakar J, Kleinstein S (2013). “Quantitative set analysis for gene expression: a method to quantify gene set differential expression including gene-gene correlations.” Nucleic Acids Res..
+
+[4] Merico, D., Isserlin, R., Stueker, O., Emili, A., Bader, G.D. (2010) Enrichment Map: A network based method for gene-set enrichment visualization and interpretation. PLoS One. 5(11):e13984.
+
+[5] McCarthy DJ, Chen Y and Smyth GK (2012). Differential expression analysis of multifactor RNA-Seq experiments with respect to biological variation. Nucleic Acids Research 40, 4288-4297
+
+[6] Hendrich, B., Guy, J., Ramsahoye, B., Wilson, V. A., & Bird, A. (2001). Closely related proteins MBD2 and MBD3 play distinctive but interacting roles in mouse development. Genes & development, 15(6), 710-723. https://doi.org/10.1101/gad.194101
+
+[7] Ginder, G.D. (2015) Epigenetic regulation of fetal globin gene expression in adult erythroid cells. Translational Research. 165(1):115-125. 
+
+[8] Subramanian, A. and Tamayo, P. Mootha, V. K. and Mukherjee, S. and Ebert, B. L. and Gillette, M. A. and Paulovich, A. and Pomeroy, S. L. and Golub, T. R. and Lander, E. S. and Mesirov, J. P. (2005). A knowledge-based approach for interpreting genome-wide expression profiles. PNAS. 102, pg 15545-15550.
+
+[9] Gu Z, Eils R, Schlesner M (2016). “Complex heatmaps reveal patterns and correlations in multidimensional genomic data.” Bioinformatics.
+
+[10] Gu Z, Gu L, Eils R, Schlesner M, Brors B (2014). “circlize implements and enhances circular visualization in R.” Bioinformatics, 30, 2811-2812.
