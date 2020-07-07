@@ -26,3 +26,6 @@ They found that MBD2KO in primary human erythroid cells significantly elevate th
 [Assignment #3](https://bcb420-2020.github.io/student_JoelleJee/A3_YoonsunJee.html)
 * Perform pathway and network analysis to uncover novel aspects about your dataset. 
 * Incorporate and integrate additional data sources to complement your dataset analysis. 
+
+## References
+Yu, X., Azzo, A., Bilinovich, S. M., Li, X., Dozmorov, M., Kurita, R., Nakamura, Y., Williams, D. C., Ginder, G. D. (2019) Disruption of the MBD2-NuRD Complex But Not MBD3-NuRD Induces High Level HbF Expression in Human Adult Erythroid Cells. Haematologica 104:2361-2371; doi:10.3324/haematol.2018.210963
